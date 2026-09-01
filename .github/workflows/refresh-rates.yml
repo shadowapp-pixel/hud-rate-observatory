@@ -1,0 +1,49 @@
+name: Refresh rate data
+
+# Pulls the latest FRED series into data/*.csv and commits any changes.
+# GitHub-hosted runners have open egress, so this is where the actual
+# FRED fetch happens. The Claude "daily refresh" routine runs an hour later,
+# clones the repo, and renders + republishes the dashboard Artifact from
+# whatever CSVs are committed here.
+
+on:
+  schedule:
+    - cron: "0 10 * * 1-5"   # 10:00 UTC, U.S. weekday mornings
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch FRED series
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          start="2026-01-01"
+          for id in DGS2 DGS5 DGS7 DGS10 DGS30 SOFR DFF T10Y2Y MORTGAGE30US; do
+            echo "fetching $id"
+            curl -sSfL \
+              -A "hud-rate-observatory/1.0 (+https://github.com/shadowapp-pixel/hud-rate-observatory)" \
+              "https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}&cosd=${start}" \
+              -o "data/${id}.csv"
+            # sanity: must have a header + at least one data row
+            test "$(wc -l < "data/${id}.csv")" -ge 2
+          done
+
+      - name: Commit if changed
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/*.csv
+          if git diff --cached --quiet; then
+            echo "No rate changes."
+          else
+            git commit -m "data: refresh FRED series ($(date -u +%Y-%m-%d))"
+            git push
+          fi

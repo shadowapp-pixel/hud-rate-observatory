@@ -4,10 +4,23 @@ Generator for a daily rate-tracking dashboard covering the Treasury and
 money-market benchmarks that drive pricing on **FHA 221(d)(4)** construction
 loans and **HFA Risk Share 50/50** (Section 542(c)) execution.
 
-## What it does
+## How it runs
 
-`build-dashboard.js` pulls nine series from FRED's no-authentication CSV
-endpoint (no API key required):
+Two scheduled pieces, because the Claude refresh sandbox can't reach FRED directly:
+
+1. **`.github/workflows/refresh-rates.yml`** — GitHub Action, weekday mornings
+   (10:00 UTC). GitHub runners have open internet, so this is where the FRED
+   fetch happens. It writes `data/*.csv` and commits any changes.
+2. **Claude Code "daily refresh" routine** — an hour later (11:00 UTC). Clones
+   this repo, runs `build-dashboard.js` against the committed CSVs, and
+   republishes the dashboard Artifact at its existing URL.
+
+`build-dashboard.js` reads `data/*.csv` first and only falls back to a live
+FRED fetch when a CSV is missing (handy for local development).
+
+## Data
+
+Nine series from FRED (no authentication / API key needed):
 
 | Series | Meaning |
 | --- | --- |
@@ -39,9 +52,5 @@ execution and FFB pricing.
 node build-dashboard.js      # writes dashboard.html
 ```
 
-Requires Node 18+ (uses the built-in `fetch`).
-
-## Daily refresh
-
-A scheduled Claude Code routine clones this repo each U.S. business morning,
-runs the generator, and republishes the dashboard Artifact at its existing URL.
+Requires Node 18+ (uses the built-in `fetch`). With `data/*.csv` present it
+runs fully offline.

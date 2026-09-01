@@ -50,7 +50,12 @@ const MODEL = {
 async function fetchSeries(id) {
   const res = await fetch(FRED(id), { headers: { 'User-Agent': 'hud-rate-observatory/1.0' } });
   if (!res.ok) throw new Error(`${id}: HTTP ${res.status}`);
-  const text = await res.text();
+  return parseCsv(await res.text());
+}
+
+const DATA_DIR = path.join(__dirname, 'data');
+
+function parseCsv(text) {
   const rows = text.trim().split(/\r?\n/).slice(1);
   const out = [];
   for (const line of rows) {
@@ -61,20 +66,19 @@ async function fetchSeries(id) {
   return out;
 }
 
-async function loadLocal(id) {
-  // Fallback to CSVs already in the scratchpad (offline dev).
-  const p = path.join(__dirname, `${id}.csv`);
-  const alt = path.join(__dirname, `${id.toLowerCase()}.csv`);
-  const file = fs.existsSync(p) ? p : (fs.existsSync(alt) ? alt : null);
-  if (!file) return null;
-  const rows = fs.readFileSync(file, 'utf8').trim().split(/\r?\n/).slice(1);
-  const out = [];
-  for (const line of rows) {
-    const [date, raw] = line.split(',');
-    const v = parseFloat(raw);
-    if (!isNaN(v)) out.push({ date, v });
-  }
-  return out;
+// Read a series from a committed CSV. The GitHub Action `refresh-rates.yml`
+// keeps `data/*.csv` current on U.S. business mornings; the cloud refresh
+// routine's sandbox cannot reach FRED directly, so these files are the
+// primary source there.
+function loadLocal(id) {
+  const candidates = [
+    path.join(DATA_DIR, `${id}.csv`),
+    path.join(DATA_DIR, `${id.toLowerCase()}.csv`),
+    path.join(__dirname, `${id}.csv`),
+    path.join(__dirname, `${id.toLowerCase()}.csv`),
+  ];
+  const file = candidates.find(f => fs.existsSync(f));
+  return file ? parseCsv(fs.readFileSync(file, 'utf8')) : null;
 }
 
 const last = a => a[a.length - 1];
@@ -107,15 +111,25 @@ function modelHistory(base, addBps) {
 
 (async () => {
   const data = {};
+  const sources = {};
+  // Prefer committed CSVs (kept fresh by the refresh-rates GitHub Action);
+  // fall back to a live FRED fetch for local development.
   for (const id of SERIES) {
+    const localFirst = loadLocal(id);
+    if (localFirst && localFirst.length) {
+      data[id] = localFirst;
+      sources[id] = 'csv';
+      continue;
+    }
     try {
       data[id] = await fetchSeries(id);
-      process.stderr.write(`fetched ${id} (${data[id].length})\n`);
+      sources[id] = 'fred';
     } catch (e) {
-      process.stderr.write(`fetch failed ${id}: ${e.message}; trying local\n`);
-      data[id] = await loadLocal(id);
-      if (!data[id]) throw new Error(`no data for ${id}`);
+      throw new Error(`no data for ${id}: no committed data/${id}.csv and FRED fetch failed (${e.message})`);
     }
+  }
+  for (const id of SERIES) {
+    process.stderr.write(`${id}: ${data[id].length} pts via ${sources[id]}, latest ${last(data[id]).date}\n`);
   }
 
   const generated = new Date();
