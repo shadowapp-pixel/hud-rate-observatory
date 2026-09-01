@@ -132,7 +132,6 @@ function modelHistory(base, addBps) {
     process.stderr.write(`${id}: ${data[id].length} pts via ${sources[id]}, latest ${last(data[id]).date}\n`);
   }
 
-  const generated = new Date();
   const asOf = last(data.DGS10).date;
 
   // ---- headline metrics ----------------------------------------------------
@@ -216,7 +215,7 @@ function modelHistory(base, addBps) {
   ];
   const spread = last(data.T10Y2Y);
 
-  const html = render({ metrics, products, curve, spread, generated, asOf, MODEL,
+  const html = render({ metrics, products, curve, spread, asOf, MODEL,
     tenYear: data.DGS10.slice(-90) });
   fs.writeFileSync(OUT, html);
   process.stderr.write(`wrote ${OUT} (${html.length} bytes)\n`);
@@ -224,8 +223,7 @@ function modelHistory(base, addBps) {
 
 // ===========================================================================
 function render(ctx) {
-  const { metrics, products, curve, spread, generated, asOf } = ctx;
-  const genStr = generated.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+  const { metrics, products, curve, spread, asOf } = ctx;
 
   const chgSpan = c => {
     const s = c > 0.001 ? 'up' : c < -0.001 ? 'down' : 'flat';
@@ -596,10 +594,10 @@ function render(ctx) {
       <p class="lede">A daily read on the Treasury and money-market rates that set pricing for
         FHA <strong>221(d)(4)</strong> construction loans and <strong>HFA Risk&nbsp;Share 50/50</strong> execution.</p>
       <div class="stamp">
-        <span class="pulse">LIVE FEED</span>
-        <span>Generated <b>${genStr}</b></span>
+        <span class="pulse">TRACKING</span>
         <span>Rate data as of <b>${asOf}</b></span>
-        <span>Source <b>FRED / U.S. Treasury</b></span>
+        <span>Refreshed each U.S. business morning</span>
+        <span>Source <b>FRED / U.S. Treasury H.15</b></span>
       </div>
     </div>
     <div class="globe-wrap">
@@ -690,7 +688,7 @@ function render(ctx) {
     <span><b>Refresh:</b> regenerated each U.S. business day; FRED posts Treasury yields with a one-day lag.</span>
     <span><b>Model spreads:</b> 221(d)(4) = 10Y + ${fmt(ctx.MODEL.d4.gnmaSpread)} GNMA + ${fmt(ctx.MODEL.d4.servicing)} svc + ${fmt(ctx.MODEL.d4.mip)} MIP.
       Risk Share = 10Y + ${fmt(ctx.MODEL.rs.ffbSpread)} FFB + ${fmt(ctx.MODEL.rs.servicing)} svc + ${fmt(ctx.MODEL.rs.mip)} premium.</span>
-    <span><b>Generated:</b> ${genStr} · not affiliated with HUD, FHA, Ginnie Mae, or the U.S. Treasury.</span>
+    <span><b>Rate data as of:</b> ${asOf} · not affiliated with HUD, FHA, Ginnie Mae, or the U.S. Treasury.</span>
   </footer>
 </main>
 `;
